@@ -1,0 +1,14 @@
+[package]
+name = "ffi"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+kernels = {path = "../kernels"}
+cxx = "1.0"
+
+[build-dependencies]
+cxx-build = "1.0"
+
+[profile.dev]
+opt-level = 1

@@ -1,0 +1,28 @@
+[package]
+name = "runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+kernels = {path = "../kernels"}
+rand_distr = "0.6.0"
+rand = "0.10.1"
+cblas = {version = "0.4", optional = true}
+ffi = {path = "../ffi"}
+
+[dev-dependencies]
+criterion = "0.5"
+
+[build-dependencies]
+pkg-config = "0.3"
+
+[features]
+default = []
+
+simd = []
+openblas = ["cblas"]
+bench = []
+
+[[bench]]
+name = "rwmh"
+harness = false
