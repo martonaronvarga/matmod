@@ -32,7 +32,10 @@ $(c_t, v_t) -> (c_{t+1}, v_{t+1}), \quad y_t \sim p(y_t \bar c_t, v_t)$
 
 ```rust
   struct State {
-    data: Vec<f64>
+    position,
+    gradient,
+    momentum,
+    log_prob,
   }
 ```
 
@@ -43,8 +46,6 @@ $(c_t, v_t) -> (c_{t+1}, v_{t+1}), \quad y_t \sim p(y_t \bar c_t, v_t)$
 - inference:
   - particle MCMC
   - HMC if fully continuous
-
-
 
 ## 3. HMM / NHMC
 

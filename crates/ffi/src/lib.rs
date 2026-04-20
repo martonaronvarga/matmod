@@ -9,4 +9,4 @@ mod ffi {
 
 pub mod ddm;
 pub mod gaussian;
-pub mod stan;
+// pub mod stan;

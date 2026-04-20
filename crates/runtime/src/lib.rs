@@ -1,6 +1,8 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
+#![feature(autodiff)]
 pub mod chain;
-pub mod models;
+pub mod integrator;
+pub mod mcmc;
 
-#[cfg(test)]
-mod tests {}
+pub use chain::{run_chain, run_gradient_chain};
+pub use mcmc::{DenseCholeskyProposal, Draws, IsotropicProposal, Proposal, Rwmh, RwmhConfig};

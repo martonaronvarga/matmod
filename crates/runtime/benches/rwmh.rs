@@ -6,10 +6,12 @@ use rand::SeedableRng;
 use ffi::gaussian::Gaussian;
 use kernels::density::LogDensity;
 use kernels::kernel::TransitionKernel;
+use kernels::metric::CholeskyFactor;
 use kernels::state::State;
 
-use runtime::models::proposal::{DenseCholeskyProposal, IsotropicProposal};
-use runtime::models::rwmh::{Rwmh, RwmhConfig};
+use runtime::mcmc::proposal::{DenseCholeskyProposal, IsotropicProposal};
+use runtime::mcmc::rwmh::{Rwmh, RwmhConfig};
+use runtime::mcmc::Proposal;
 
 fn bench_rwmh_isotropic(c: &mut Criterion) {
     let dim = 256;
@@ -49,13 +51,6 @@ fn bench_rwmh_dense(c: &mut Criterion) {
     let dim = 256;
     let density = Gaussian;
 
-    let mut chol = vec![0.0; dim * dim];
-    let mut chol_buf = kernels::buffer::OwnedBuffer::new(dim * dim);
-    for i in 0..dim {
-        chol[i * dim + i] = 1.0;
-    }
-    chol_buf.as_mut_slice().copy_from_slice(&chol);
-
     let step_size = 2.38 / (dim as f64).sqrt();
 
     let config = RwmhConfig::default()
@@ -64,14 +59,21 @@ fn bench_rwmh_dense(c: &mut Criterion) {
         .with_adapt_step_size(false)
         .with_step_size(step_size);
 
-    let mut kernel = Rwmh::dense_cholesky(config, dim, chol_buf);
+    let mut chol = kernels::buffer::OwnedBuffer::new(dim * dim);
+    chol.fill(0.0);
+    for i in 0..dim {
+        chol.as_mut_slice()[i * dim + i] = 1.0;
+    }
+
+    let factor = CholeskyFactor::new_lower(dim, chol);
+    let mut kernel = Rwmh::dense_cholesky(config, factor);
 
     c.bench_function("rwmh_dense_step", |b| {
         b.iter_batched(
             || {
                 let rng = Xoshiro256PlusPlus::seed_from_u64(42);
                 let mut state = State::new(dim);
-                state.position.as_mut_slice().fill(0.1);
+                state.position.fill(0.1);
                 (state, rng)
             },
             |(mut state, mut rng)| {
@@ -85,8 +87,6 @@ fn bench_rwmh_dense(c: &mut Criterion) {
         )
     });
 }
-
-use runtime::models::proposal::Proposal;
 
 fn bench_isotropic_proposal(c: &mut Criterion) {
     let dim = 256;
@@ -112,15 +112,14 @@ fn bench_dense_proposal(c: &mut Criterion) {
     let dim = 256;
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
-    let mut chol = vec![0.0; dim * dim];
-
-    let mut chol_buf = kernels::buffer::OwnedBuffer::new(dim * dim);
+    let mut chol = kernels::buffer::OwnedBuffer::new(dim * dim);
+    chol.fill(0.0);
     for i in 0..dim {
-        chol[i * dim + i] = 1.0;
+        chol.as_mut_slice()[i * dim + i] = 1.0;
     }
-    chol_buf.as_mut_slice().copy_from_slice(&chol);
 
-    let mut proposal = DenseCholeskyProposal::new(dim, chol_buf);
+    let factor = CholeskyFactor::new_lower(dim, chol);
+    let mut proposal = DenseCholeskyProposal::new(factor);
 
     let x = vec![0.0; dim];
     let mut out = vec![0.0; dim];
@@ -187,7 +186,7 @@ fn bench_fill_normals(c: &mut Criterion) {
     let mut buf = vec![0.0; dim];
 
     c.bench_function("fill_normals", |b| {
-        b.iter(|| runtime::models::fill_normals(black_box(&mut buf), black_box(&mut rng)))
+        b.iter(|| runtime::mcmc::fill_normals(black_box(&mut buf), black_box(&mut rng)))
     });
 }
 

@@ -1,15 +1,15 @@
 # 1. Core principle
 Split everything into:
 
-## (A) Model kernels (compiled, optimized)
-- likelihoods
-- transitions
-- potentials
-- simulators
+## (A) Statistical objects and low-level capabilities
+- `LogDensity`
+- `GradLogDensity`
+- `Metric`
+- `TransitionModel` / `ObservationModel`
 
-## (B) Inference engines (compiled, reusable)
+## (B) Inference algorithms
 - HMC / NUTS
-- particle filters
+- particle filters / SMC
 - Gibbs / MH
 - BP / variational
 
@@ -36,9 +36,10 @@ good:
 - feature-gated backends:
 ```Cargo.toml
   [features]
-  stan = []
-  mpi = []
-  gpu = []
+  simd = []
+  openblas = []
+  enzyme = []
+  futhark = []
 ```
 
 ## (D) Analysis layer (python/R)
@@ -53,17 +54,18 @@ good:
   - FFI
   - parallelism: `rayon`, `tokio`
 - crates:
-  - `ndarray`, `nalgebra` linalg
+  - `faer` linalg
   - `rand`, `rand_distr` randomness
   - `rayon`, `tokio` parallelism
   - `pyo3` / `maturin` python bridge
-  - `cxx` / `ffi-support` c++ interop
+  - `cxx` / `ffi-support`, `bindgen` c++ interop
   - `futhark-bindgen` futhark interop
 
 ## C++ (performance kernels + existing libs)
 - eigen (linalg)
 - Stan Math (autodiff + probability functions)
-- libtorch (neural likelihoods)
+- enzyme (autodiff at LLVM IR level)
+- libtorch optional (neural likelihoods)
 
 ## Futhark (experimental)
 - batched likelihood evaluation
@@ -109,9 +111,9 @@ good:
 
 ## Monte Carlo / MCMC
 Minimal core:
-- HMC (leapfrog + autodiff via Stan Math)
+- RWMH (fallback)
+- HMC (leapfrog + autodiff via Stan Math? or self leapfrog in rust AD in enzyme)
 - NUTS
-- MH (fallback)
 - Gibbs (for discrete blocks)
 - trait based kernel interface
 - RNG strategy: seeded per chain, deterministic splitting (`rand_chacha` or `PCG`)
@@ -129,11 +131,11 @@ Minimal core:
 # 5. Optimizers
 
 (1) Mixed inference
-- continuous: HMC
+- continuous: HMC, NUTS, RMHMC, ChEES-HMC, SMC
 - discrete: Gibbs
 - time-series: particle MCMC
 
-(2) Likelihood amortization
+(2) Likelihood amortization?
 - precompute grids
 - train neural surrogates (optional)
 
@@ -144,4 +146,5 @@ Minimal core:
 
 (4) Memory layout
 - SoA > AoS for SIMD
+- col major for blas and linalg
 - contiguous arays for futhark/gpu

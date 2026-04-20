@@ -8,18 +8,23 @@ mod ffi {
     }
 }
 
-pub struct CppKernel;
+use kernels::density::{GradLogDensity, LogDensity};
 
-impl kernels::density::LogDensity for CppKernel {
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StanTarget;
+
+impl LogDensity for StanTarget {
     fn log_prob(&self, x: &[f64]) -> f64 {
-        ffi::log_prob(&x.to_vec())
+        let x_vec = x.to_vec();
+        ffi::log_prob(&x_vec)
     }
 }
 
-impl kernels::density::Gradient for CppKernel {
+impl GradLogDensity for StanTarget {
     fn grad_log_prob(&self, x: &[f64], grad: &mut [f64]) {
-        let mut g = grad.to_vec();
-        ffi::grad_log_prob(&x.to_vec(), &mut g);
-        grad.copy_from_slice(&g);
+        let x_vec = x.to_vec();
+        let mut tmp = grad.to_vec();
+        ffi::grad_log_prob(&x_vec, &mut tmp);
+        grad.copy_from_slice(&tmp);
     }
 }

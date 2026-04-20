@@ -1,3 +1,8 @@
 result
+data
 target
 .helix
+*.cc
+*.h
+.nix-rust
+.cmdStan

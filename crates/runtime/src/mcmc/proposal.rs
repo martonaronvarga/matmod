@@ -1,5 +1,5 @@
-use kernels::buffer::OwnedBuffer;
-use rand::{Rng, RngExt};
+use kernels::{buffer::OwnedBuffer, metric::CholeskyFactor};
+use rand::Rng;
 use rand_distr::StandardNormal;
 
 #[cfg(feature = "openblas")]
@@ -8,7 +8,7 @@ use cblas::{dtrmv, Diagonal, Layout, Part, Transpose};
 #[inline(always)]
 pub fn fill_normals<R: Rng + ?Sized>(dst: &mut [f64], rng: &mut R) {
     for v in dst.iter_mut() {
-        *v = rng.sample(StandardNormal);
+        *v = rng.sample::<f64, _>(StandardNormal);
     }
 }
 
@@ -27,15 +27,11 @@ pub trait Proposal {
 #[derive(Debug)]
 pub struct IsotropicProposal {
     dim: usize,
-    z: OwnedBuffer,
 }
 
 impl IsotropicProposal {
     pub fn new(dim: usize) -> Self {
-        Self {
-            dim,
-            z: OwnedBuffer::new(dim),
-        }
+        Self { dim }
     }
 
     #[inline(always)]
@@ -46,11 +42,9 @@ impl IsotropicProposal {
         step_size: f64,
         rng: &mut R,
     ) {
-        fill_normals(self.z.as_mut_slice(), rng);
-
-        let z = self.z.as_slice();
+        fill_normals(out, rng);
         for i in 0..self.dim {
-            out[i] = x[i] + step_size * z[i];
+            out[i] = x[i] + step_size * out[i];
         }
     }
 
@@ -67,22 +61,19 @@ impl IsotropicProposal {
         use std::simd::Simd;
 
         const LANES: usize = 8;
+        fill_normals(out, rng);
 
-        fill_normals(self.z.as_mut_slice(), rng);
-
-        let z = self.z.as_slice();
         let step = Simd::<f64, LANES>::splat(step_size);
-
         let mut i = 0;
         while i + LANES <= self.dim {
             let xv = Simd::<f64, LANES>::from_slice(&x[i..i + LANES]);
-            let zv = Simd::<f64, LANES>::from_slice(&z[i..i + LANES]);
+            let zv = Simd::<f64, LANES>::from_slice(&out[i..i + LANES]);
             (xv + step * zv).copy_to_slice(&mut out[i..i + LANES]);
             i += LANES;
         }
 
         while i < self.dim {
-            out[i] = x[i] + step_size * z[i];
+            out[i] = x[i] + step_size * out[i];
             i += 1;
         }
     }
@@ -119,34 +110,22 @@ impl Proposal for IsotropicProposal {
 
 #[derive(Debug)]
 pub struct DenseCholeskyProposal {
-    dim: usize,
-    /// Column-major lower-triangular factor. Only entries with row >= col are read.
-    chol: OwnedBuffer,
+    factor: CholeskyFactor,
     z: OwnedBuffer,
 }
 
 impl DenseCholeskyProposal {
-    pub fn new(dim: usize, chol: OwnedBuffer) -> Self {
-        let expected = dim.checked_mul(dim).expect("dimension overflow");
-        assert_eq!(chol.len(), expected, "Cholesky factor must be dim × dim");
-
-        #[cfg(debug_assertions)]
-        {
-            let diag = chol.as_slice();
-            for i in 0..dim {
-                let d = diag[i * dim + i];
-                assert!(
-                    d.is_finite() && d > 0.0,
-                    "Cholesky diagonal must be positive"
-                );
-            }
-        }
-
+    pub fn new(factor: CholeskyFactor) -> Self {
+        let dim = factor.dim();
         Self {
-            dim,
-            chol,
+            factor,
             z: OwnedBuffer::new(dim),
         }
+    }
+
+    #[inline]
+    pub fn dim(&self) -> usize {
+        self.factor.dim()
     }
 
     #[inline(always)]
@@ -162,14 +141,13 @@ impl DenseCholeskyProposal {
         out.copy_from_slice(x);
 
         let z = self.z.as_slice();
-        let chol = self.chol.as_slice();
+        let chol = self.factor.as_slice();
+        let dim = self.factor.dim();
 
-        // out = x + step_size * L * z
-        // L is stored column-major, lower-triangular.
-        for j in 0..self.dim {
+        for j in 0..dim {
             let zj = step_size * z[j];
-            let col = &chol[j * self.dim..j * self.dim + self.dim];
-            for i in j..self.dim {
+            let col = &chol[j * dim..j * dim + dim];
+            for i in j..dim {
                 out[i] += col[i] * zj;
             }
         }
@@ -185,10 +163,9 @@ impl DenseCholeskyProposal {
         rng: &mut R,
     ) {
         fill_normals(self.z.as_mut_slice(), rng);
-
         out.copy_from_slice(x);
 
-        let chol = self.chol.as_slice();
+        let chol = self.factor.as_slice();
         let z = self.z.as_mut_slice();
 
         unsafe {
@@ -197,15 +174,15 @@ impl DenseCholeskyProposal {
                 Part::Lower,
                 Transpose::None,
                 Diagonal::Generic,
-                self.dim as i32,
+                self.factor.dim() as i32,
                 chol,
-                self.dim as i32,
+                self.factor.dim() as i32,
                 z,
                 1,
             )
         };
 
-        for i in 0..self.dim {
+        for i in 0..self.factor.dim() {
             out[i] += step_size * z[i];
         }
     }
@@ -214,7 +191,7 @@ impl DenseCholeskyProposal {
 impl Proposal for DenseCholeskyProposal {
     #[inline(always)]
     fn dim(&self) -> usize {
-        self.dim
+        self.factor.dim()
     }
 
     #[inline(always)]
@@ -225,8 +202,8 @@ impl Proposal for DenseCholeskyProposal {
         step_size: f64,
         rng: &mut R,
     ) {
-        debug_assert_eq!(x.len(), self.dim);
-        debug_assert_eq!(out.len(), self.dim);
+        debug_assert_eq!(x.len(), self.factor.dim());
+        debug_assert_eq!(out.len(), self.factor.dim());
 
         #[cfg(feature = "openblas")]
         {

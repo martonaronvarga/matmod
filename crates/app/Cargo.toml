@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 rand = "0.10.1"
-rand_chacha = "0.10.0"
 kernels = {path = "../kernels"}
 ffi = {path = "../ffi"}
 runtime = {path = "../runtime"}

@@ -79,20 +79,6 @@ impl OwnedBuffer {
     }
 
     #[inline]
-    pub fn vec_view(&self) -> VecView<'_> {
-        VecView {
-            data: self.as_slice(),
-        }
-    }
-
-    #[inline]
-    pub fn vec_view_mut(&mut self) -> VecViewMut<'_> {
-        VecViewMut {
-            data: self.as_mut_slice(),
-        }
-    }
-
-    #[inline]
     pub fn fill(&mut self, value: f64) {
         self.as_mut_slice().fill(value);
     }
@@ -120,6 +106,20 @@ impl Deref for OwnedBuffer {
 impl DerefMut for OwnedBuffer {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_mut_slice()
+    }
+}
+
+impl AsRef<[f64]> for OwnedBuffer {
+    #[inline]
+    fn as_ref(&self) -> &[f64] {
+        self.as_slice()
+    }
+}
+
+impl AsMut<[f64]> for OwnedBuffer {
+    #[inline]
+    fn as_mut(&mut self) -> &mut [f64] {
         self.as_mut_slice()
     }
 }
@@ -161,69 +161,3 @@ impl<'a> VecViewMut<'a> {
         self.data
     }
 }
-
-pub struct MatView<'a> {
-    data: &'a [f64],
-    rows: usize,
-    cols: usize,
-    stride: usize, // column-major: data[col * stride + row]
-}
-
-pub struct MatViewMut<'a> {
-    data: &'a mut [f64],
-    rows: usize,
-    cols: usize,
-    stride: usize,
-}
-
-impl<'a> MatView<'a> {
-    pub fn new_col_major(data: &'a [f64], rows: usize, cols: usize) -> Self {
-        assert_eq!(data.len(), rows * cols);
-        Self {
-            data,
-            rows,
-            cols,
-            stride: rows,
-        }
-    }
-
-    #[inline]
-    pub fn at(&self, row: usize, col: usize) -> f64 {
-        self.data[col * self.stride + row]
-    }
-
-    #[inline]
-    pub fn rows(&self) -> usize {
-        self.rows
-    }
-
-    #[inline]
-    pub fn cols(&self) -> usize {
-        self.cols
-    }
-}
-
-impl<'a> MatViewMut<'a> {
-    pub fn new_col_major(data: &'a mut [f64], rows: usize, cols: usize) -> Self {
-        assert_eq!(data.len(), rows * cols);
-        Self {
-            data,
-            rows,
-            cols,
-            stride: rows,
-        }
-    }
-
-    #[inline]
-    pub fn at(&self, row: usize, col: usize) -> f64 {
-        self.data[col * self.stride + row]
-    }
-
-    #[inline]
-    pub fn at_mut(&mut self, row: usize, col: usize) -> &mut f64 {
-        &mut self.data[col * self.stride + row]
-    }
-}
-
-#[cfg(test)]
-mod tests {}

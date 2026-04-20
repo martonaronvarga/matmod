@@ -18,32 +18,26 @@ matmod/
 ```
 kernels/
 ├── lib.rs
-├── state.rs          # State representations
-├── density.rs        # LogDensity, Gradient traits
-├── kernel.rs         # TransitionKernel, etc.
-├── compose.rs        # Kernel combinators
-└── diagnostics.rs
+├── state.rs          # chain state and working buffers
+├── density.rs        # LogDensity, GradLogDensity, HessianLogDensity
+├── kernel.rs         # TransitionKernel, GradientKernel, state-space traits
+├── buffer.rs         # owned buffers + views
+├── metric.rs         # Identity, diagonal, dense Cholesky geometry
 ```
 
-- no `unsafe`
-- no heavy deps
-- mostly traits + small structs
 - prefer generics over trait objects
+- keep the core trait layer small
 
 ```
 ffi/
 ├── lib.rs
-├── stan/
-│   ├── mod.rs
-│   ├── bindings.rs     # cxx / extern "C"
-│   └── wrapper.rs      # safe Rust API
-├── eigen/
-│   └── ...
-└── util.rs             # buffer conversions
+├── gaussian.rs      # Gaussian target backend
+├── stan.rs          # C++ / Stan-style backend example
+└── ddm.rs           # future DDM backend
 ```
 
-- `bindings.rs` raw FFI, unsafe
-- `wrapper.rs` safe abstraction implementing `core` traits
+- raw FFI stays in the wrapper layer
+- wrapper types implement `LogDensity` / `GradLogDensity`
 
 ```
 runtime/
@@ -67,17 +61,14 @@ runtime/
 ```
 
 - no ffi here
-- depends on `core` and `ffi`
+- algorithms depend only on the trait layer
 - uses `rayon` for parallelism and sched
+- add HMC / NUTS / SMC here as separate modules
 
 ```
 app/
 ├── main.rs
-├── experiments/
-│   ├── mod.rs
-│   └── hmc.rs
-└── models/
-    └── ...
+└── ...
 ```
 
 - wire kernels together

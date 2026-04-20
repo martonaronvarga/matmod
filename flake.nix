@@ -27,19 +27,43 @@
       perSystem = {system, ...}: let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [fenix.overlays.default];
+          overlays = [];
         };
         stdenv = pkgs.clangStdenv;
+        llvmPkgs = pkgs.llvmPackages_22;
 
-        rustToolchain = fenix.packages.${system}.latest.withComponents [
-          "rustc"
-          "rust-src"
-          "cargo"
-          "clippy"
-          "rustfmt"
-        ];
+        enzyme = pkgs.callPackage ./nix/enzyme.nix {
+          inherit llvmPkgs;
+        };
 
-        coreBuild = with pkgs; [gcc cmake gnumake pkg-config clang clang-tools cppcheck clang-analyzer llvmPackages.libcxx llvmPackages.libunwind openssl openblas openmpi opencl-headers ocl-icd];
+        fenixPkgs = fenix.packages.${system};
+        bootstrapRust = fenixPkgs.latest.toolchain;
+
+        rustToolchainBase = pkgs.callPackage ./nix/rust-toolchain.nix {
+          version = "nightly";
+          bootstrap = bootstrapRust;
+          inherit pkgs llvmPkgs;
+        };
+        rustToolchain = pkgs.symlinkJoin {
+          name = "rust-toolchain";
+          paths = [
+            rustToolchainBase
+          ];
+          nativeBuildInputs = [pkgs.makeWrapper];
+          postBuild = ''
+            libdir=$out/lib/rustlib/x86_64-unknown-linux-gnu/lib/
+            mkdir -p $libdir
+            ln -s ${enzyme}/lib/LLVMEnzyme-22.so $libdir/
+            if [ -f ${enzyme}/lib/LLVMEnzyme-22.so ]; then
+              ln -s ${enzyme}/lib/LLVMEnzyme-22.so $libdir/libEnzyme-22.so
+            else
+              echo "WARNING: Could not find LLVMEnzyme-22.so in ${enzyme}/lib/"
+            fi
+            wrapProgram $out/bin/rustc --add-flags "--sysroot $out"
+          '';
+        };
+
+        coreBuild = with pkgs; [gcc cmake gnumake pkg-config clang clang-tools cppcheck clang-analyzer llvmPackages_22.libcxx llvmPackages_22.libunwind openssl openblas openmpi opencl-headers ocl-icd];
         cppPkgs = with pkgs; [boost eigen fmt];
         zigPkgs = with pkgs; [zig zls];
         futharkPkgs = with pkgs; [futhark];
@@ -57,7 +81,7 @@
           cppcheck
           massif-visualizer
           hyperfine
-          rust-analyzer-nightly
+          rust-analyzer
         ];
 
         pythonEnv = pkgs.python3.withPackages (ps:
@@ -173,7 +197,12 @@
         rustPackage = naersk-lib.buildPackage {
           src = ./crates;
           cargoBuildOptions = opts:
-            opts ++ ["--features" "ffi-backend"];
+            opts
+            ++ [
+              "--features"
+              "ffi-backend"
+              "--config=build.rustflags=[\"-Zautodiff=Enable\"]"
+            ];
           nativeBuildInputs = [
             pkgs.pkg-config
           ];
@@ -182,7 +211,8 @@
           ];
           cargoEnv = {
             "CXXFLAGS" = "-I${pkgs.eigen}/include/eigen3";
-            "OPENBLAS_NUM_THREADS" = 1;
+            "OPENBLAS_NUM_THREADS" = "1";
+            "RUSTC_BOOTSTRAP" = "1";
           };
         };
 
@@ -202,6 +232,8 @@
         };
       in {
         packages = {
+          rustToolchain = rustToolchain;
+          cmdStan = cmdStan;
           rustPackage = rustPackage;
           default = matmod;
         };
@@ -214,32 +246,66 @@
           formatting = treefmtEval.config.build.check self;
         };
 
-        devShells.default = pkgs.mkShell rec {
-          hardeningDisable = ["all"];
-          packages =
-            [pythonEnv rEnv rustToolchain cmdStan]
-            ++ coreBuild
-            ++ zigPkgs
-            ++ cppPkgs
-            ++ futharkPkgs
-            ++ utilities;
+        # lazy devshell
+        devShells = {
+          default = pkgs.mkShell rec {
+            hardeningDisable = ["all"];
+            packages =
+              [pythonEnv rEnv]
+              ++ coreBuild
+              ++ zigPkgs
+              ++ cppPkgs
+              ++ futharkPkgs
+              ++ utilities;
 
-          shellHook = ''
-            echo "---------------------------------------"
-            echo "you are in the flake's default devshell"
-            echo "---------------------------------------"
+            shellHook = ''
+              echo "---------------------------------------"
+              echo "you are in the flake's default devshell"
 
-            export DCMAKE_EXPORT_COMPILE_COMMANDS=1
+              export DCMAKE_EXPORT_COMPILE_COMMANDS=1
 
-            exec zsh
-          '';
+              if [ -x "$PWD/.nix-rust/bin/rustc" ]; then
+                export PATH="$PWD/.nix-rust/bin:$PATH"
+                export RUSTFLAGS="-L${pkgs.openblas}/lib -lopenblas -C target-cpu=native -C target-feature=+avx2,+fma -C link-arg=-Wl,-rpath,${pkgs.gcc.cc.lib}/lib -C link-arg=-Wl,-rpath,$PWD/.nix-rust/lib -Zautodiff=Enable"
+                echo "local rust toolchain detected and loaded"
+              else
+                echo "rust toolchain is missing or not built"
+                echo "   run:  nix build .#rustToolchain -o .nix-rust"
+                echo "   then: exit and re-enter 'nix develop'"
+              fi
 
-          LD_LIBRARY_PATH =
-            pkgs.lib.makeLibraryPath
-            packages;
-          LLDB_DEBUGSERVER_PATH = "${pkgs.lldb}/bin/lldb-server";
-          CPLUS_INCLUDE_PATH = "crates/target/cxxbridge/";
-          RUSTFLAGS = "-L${pkgs.openblas}/lib -lopenblas -C target-cpu=native -C target-feature=+avx2,+fma -C link-arg=-Wl,-rpath,${pkgs.gcc.cc.lib}/lib";
+              if [ -x "$PWD/.nix-cmdstan/bin/stanc" ]; then
+                export PATH="$PWD/.nix-cmdstan/bin:$PATH"
+                echo "local cmdStan detected and loaded"
+              else
+                echo "cmdStan is missing or not built."
+                echo "run:  nix build .#cmdStan -o .nix-cmdstan"
+              fi
+
+              echo "---------------------------------------"
+              exec zsh
+            '';
+
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath packages;
+            LLDB_DEBUGSERVER_PATH = "${pkgs.lldb}/bin/lldb-server";
+            CPLUS_INCLUDE_PATH = "crates/target/cxxbridge";
+
+            # RUSTFLAGS = [
+            #   "-L${pkgs.openblas}/lib"
+            #   "-lopenblas"
+            #   "-C target-cpu=native"
+            #   "-C target-feature=+avx2,+fma"
+            #   "-C link-arg=-Wl,-rpath,${pkgs.gcc.cc.lib}/lib"
+            #   "-C link-arg=-Wl,-rpath,${enzyme}/lib"
+            #   "-Zautodiff=Enable"
+            # ];
+          };
+
+          full = pkgs.mkShell {
+            inputsFrom = [self.devShells.${system}.default];
+            packages = [rustToolchain cmdStan];
+            RUSTFLAGS = "-L${pkgs.openblas}/lib -lopenblas -C target-cpu=native -C target-feature=+avx2,+fma -C link-arg=-Wl,-rpath,${pkgs.gcc.cc.lib}/lib -C link-arg=-Wl,-rpath,${rustToolchain}/lib -Zautodiff=Enable";
+          };
         };
       };
     };
