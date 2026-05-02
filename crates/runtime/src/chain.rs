@@ -28,11 +28,14 @@ where
     pub fn step<R: Rng + ?Sized>(&mut self, rng: &mut R) -> bool {
         self.kernel.step(&mut self.state, &self.target, rng)
     }
-
-    pub fn run<R: Rng + ?Sized>(&mut self, n_steps: usize, rng: &mut R) {
-        self.initialize();
-        for _ in 0..n_steps {
-            self.step(rng);
-        }
+}
+pub fn run_chain<K, D, R>(chain: &mut Chain<K, D>, n_steps: usize, rng: &mut R)
+where
+    K: Kernel<D>,
+    R: Rng + ?Sized,
+{
+    chain.initialize();
+    for _ in 0..n_steps {
+        chain.step(rng);
     }
 }

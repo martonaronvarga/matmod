@@ -1,5 +1,7 @@
-pub mod proposal;
+pub mod hmc;
+pub mod nuts;
 pub mod rwmh;
 
-pub use proposal::{fill_normals, DenseCholeskyProposal, IsotropicProposal, Proposal};
-pub use rwmh::{DenseCholeskyRwmh, Draws, IsotropicRwmh, Rwmh, RwmhConfig};
+pub use hmc::{Hmc, HmcConfig};
+pub use nuts::{NUTSConfig, NUTS};
+pub use rwmh::{Draws, Rwmh, RwmhConfig};

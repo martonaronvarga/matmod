@@ -4,7 +4,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct State<P = OwnedBuffer, A = ()> {
+pub struct ChainState<P = OwnedBuffer, A = ()> {
     pub position: P,
     pub log_prob: f64,
     pub aux: A,
@@ -41,14 +41,20 @@ pub trait GradientState: LogProbState {
     fn gradient_mut(&mut self) -> &mut [f64];
     fn momentum(&self) -> &[f64];
     fn momentum_mut(&mut self) -> &mut [f64];
+    fn with_position_and_gradient_mut<T, F>(&mut self, f: F) -> T
+    where
+        F: FnOnce(&[f64], &mut [f64]) -> T;
 
     #[inline]
     fn initialize_gradient<D: GradLogDensity>(&mut self, density: &D) {
-        density.grad_log_prob(self.position(), self.gradient_mut());
+        self.with_position_and_gradient_mut(|position, gradient| {
+            debug_assert_eq!(position.len(), gradient.len());
+            density.grad_log_prob(position, gradient);
+        });
     }
 }
 
-impl State<OwnedBuffer, ()> {
+impl ChainState<OwnedBuffer, ()> {
     pub fn new(dim: usize) -> Self {
         let mut position = OwnedBuffer::new(dim);
         position.fill(0.0);
@@ -61,7 +67,7 @@ impl State<OwnedBuffer, ()> {
     }
 }
 
-impl<P, A> State<P, A> {
+impl<P, A> ChainState<P, A> {
     pub fn with_aux(position: P, aux: A) -> Self {
         Self {
             position,
@@ -71,7 +77,7 @@ impl<P, A> State<P, A> {
     }
 }
 
-impl<P, A> LogProbState for State<P, A>
+impl<P, A> LogProbState for ChainState<P, A>
 where
     P: AsRef<[f64]> + AsMut<[f64]>,
 {
@@ -101,7 +107,7 @@ where
     }
 }
 
-impl<P, A> GradientState for State<P, A>
+impl<P, A> GradientState for ChainState<P, A>
 where
     P: AsRef<[f64]> + AsMut<[f64]>,
     A: GradientStorage,
@@ -124,6 +130,16 @@ where
     #[inline]
     fn momentum_mut(&mut self) -> &mut [f64] {
         self.aux.momentum_mut()
+    }
+
+    #[inline]
+    fn with_position_and_gradient_mut<T, F>(&mut self, f: F) -> T
+    where
+        F: FnOnce(&[f64], &mut [f64]) -> T,
+    {
+        let position = self.position.as_ref();
+        let gradient = self.aux.gradient_mut();
+        f(position, gradient)
     }
 }
 

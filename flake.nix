@@ -50,6 +50,7 @@
             rustToolchainBase
           ];
           nativeBuildInputs = [pkgs.makeWrapper];
+
           postBuild = ''
             libdir=$out/lib/rustlib/x86_64-unknown-linux-gnu/lib/
             mkdir -p $libdir
@@ -59,7 +60,33 @@
             else
               echo "WARNING: Could not find LLVMEnzyme-22.so in ${enzyme}/lib/"
             fi
-            wrapProgram $out/bin/rustc --add-flags "--sysroot $out"
+
+            # wrapProgram $out/bin/rustc --add-flags "--sysroot $out"
+            wrapProgram $out/bin/cargo --set RUSTC $out/bin/rustc
+            # wrapProgram $out/bin/rustdoc --add-flags "--sysroot $out"
+
+            # # Wrap the compiler binaries to enforce the custom sysroot
+            # makeWrapper ${rustToolchainBase}/bin/rustc $out/bin/rustc --add-flags "--sysroot $out"
+            # makeWrapper ${rustToolchainBase}/bin/rustdoc $out/bin/rustdoc --add-flags "--sysroot $out"
+
+            # # Wrap cargo
+            # makeWrapper ${rustToolchainBase}/bin/cargo $out/bin/cargo \
+            #   --set RUSTC "$out/bin/rustc" \
+            #   --set RUSTDOC "$out/bin/rustdoc" \
+            #   --set RUSTC_WORKSPACE_WRAPPER "$out/bin/rustc"
+
+            # # # Wrap cargo-clippy to ensure it inherits our settings
+            # makeWrapper ${rustToolchainBase}/bin/clippy-driver $out/bin/clippy-driver \
+            #   --set CARGO "$out/bin/cargo" \
+            #   --set RUSTC "$out/bin/rustc" \
+            #   --set RUSTDOC "$out/bin/rustdoc"
+
+
+            # makeWrapper ${rustToolchainBase}/bin/cargo-miri $out/bin/cargo-miri \
+            #   --set CARGO "$out/bin/cargo" \
+            #   --set RUSTC "$out/bin/rustc" \
+            #   --set RUSTDOC "$out/bin/rustdoc"
+
           '';
         };
 
@@ -81,7 +108,6 @@
           cppcheck
           massif-visualizer
           hyperfine
-          rust-analyzer
         ];
 
         pythonEnv = pkgs.python3.withPackages (ps:
@@ -266,7 +292,7 @@
 
               if [ -x "$PWD/.nix-rust/bin/rustc" ]; then
                 export PATH="$PWD/.nix-rust/bin:$PATH"
-                export RUSTFLAGS="-L${pkgs.openblas}/lib -lopenblas -C target-cpu=native -C target-feature=+avx2,+fma -C link-arg=-Wl,-rpath,${pkgs.gcc.cc.lib}/lib -C link-arg=-Wl,-rpath,$PWD/.nix-rust/lib -Zautodiff=Enable"
+                export RUSTFLAGS="-L${pkgs.openblas}/lib -lopenblas -C target-cpu=native -C target-feature=+avx2,+fma -C link-arg=-Wl,-rpath,${pkgs.gcc.cc.lib}/lib -C link-arg=-Wl,-rpath,$PWD/.nix-rust/lib -Zautodiff=Enable --sysroot $PWD/.nix-rust"
                 echo "local rust toolchain detected and loaded"
               else
                 echo "rust toolchain is missing or not built"
@@ -304,7 +330,7 @@
           full = pkgs.mkShell {
             inputsFrom = [self.devShells.${system}.default];
             packages = [rustToolchain cmdStan];
-            RUSTFLAGS = "-L${pkgs.openblas}/lib -lopenblas -C target-cpu=native -C target-feature=+avx2,+fma -C link-arg=-Wl,-rpath,${pkgs.gcc.cc.lib}/lib -C link-arg=-Wl,-rpath,${rustToolchain}/lib -Zautodiff=Enable";
+            # RUSTFLAGS = "-L${pkgs.openblas}/lib -lopenblas -C target-cpu=native -C target-feature=+avx2,+fma -C link-arg=-Wl,-rpath,${pkgs.gcc.cc.lib}/lib -C link-arg=-Wl,-rpath,${rustToolchain}/lib -Zautodiff=Enable";
           };
         };
       };

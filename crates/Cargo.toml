@@ -3,3 +3,5 @@ resolver = "3"
 members = ["ffi", "data_prep", "app", "kernels", "runtime"]
 [profile.release]
 lto = "fat"
+
+

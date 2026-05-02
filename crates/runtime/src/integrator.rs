@@ -1,38 +1,29 @@
-pub struct Leapfrog<M> {
-    pub metric: M,
-    pub step_size: f64,
-}
+use kernels::{density::GradLogDensity, metric::Metric, state::GradientState};
 
-impl<M> Leapfrog<M>
-where
+#[inline]
+pub fn leapfrog_step<D, M, S>(
+    metric: &M,
+    step_size: f64,
+    state: &mut S,
+    target: &D,
+    velocity: &mut [f64],
+) where
+    D: GradLogDensity,
     M: Metric,
+    S: GradientState,
 {
-    pub fn step<D, S>(&self, state: &mut S, target: &D)
-    where
-        D: GradLogDensity,
-        S: GradientState + MomentumState,
-    {
-        let eps = self.step_size;
-
-        // p ← p + (ε/2) ∇ log π(q)
-        for (p, g) in state.momentum_mut().iter_mut().zip(state.gradient()) {
-            *p += 0.5 * eps * g;
-        }
-
-        // q ← q + ε M^{-1} p
-        let mut velocity = vec![0.0; state.dim()].as_mut_slice();
-        self.metric.apply_inverse(state.momentum(), &mut velocity);
-
-        for (q, v) in state.position_mut().iter_mut().zip(&velocity) {
-            *q += eps * v;
-        }
-
-        // recompute gradient
-        target.grad_log_prob(state.position(), state.gradient_mut());
-
-        // p ← p + (ε/2) ∇ log π(q)
-        for (p, g) in state.momentum_mut().iter_mut().zip(state.gradient()) {
-            *p += 0.5 * eps * g;
-        }
+    let dim = state.dim();
+    velocity.copy_from_slice(state.gradient());
+    for i in 0..dim {
+        state.momentum_mut()[i] += 0.5 * step_size * velocity[i];
+    }
+    metric.apply_inverse(state.momentum(), velocity);
+    for (q, v) in state.position_mut().iter_mut().zip(velocity.iter()) {
+        *q += step_size * v;
+    }
+    state.initialize_gradient(target);
+    velocity.copy_from_slice(state.gradient());
+    for i in 0..dim {
+        state.momentum_mut()[i] += 0.5 * step_size * velocity[i];
     }
 }

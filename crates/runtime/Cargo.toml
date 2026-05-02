@@ -5,10 +5,9 @@ edition = "2024"
 build = "build.rs"
 
 [dependencies]
-kernels = {path = "../kernels"}
+kernels = { path = "../kernels" }
 rand = "0.10.1"
-ffi = {path = "../ffi"}
-cblas = {version = "0.4", optional = true}
+ffi = { path = "../ffi" }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -19,8 +18,9 @@ pkg-config = "0.3"
 [features]
 default = []
 
-simd = []
-openblas = ["cblas"]
+simd = ["kernels/simd"]
+openblas = ["kernels/openblas"]
+faer = ["kernels/faer"]
 bench = []
 
 [[bench]]
